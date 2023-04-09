@@ -172,6 +172,7 @@ dependencies = [
  "rsa-der",
  "sha2",
  "tar",
+ "tbf-parser",
 ]
 
 [[package]]
@@ -484,6 +485,10 @@ dependencies = [
  "libc",
  "xattr",
 ]
+
+[[package]]
+name = "tbf-parser"
+version = "0.1.0"
 
 [[package]]
 name = "termcolor"

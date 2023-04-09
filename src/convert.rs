@@ -1,7 +1,5 @@
 //! Convert ELF to TBF.
 
-use crate::header;
-use crate::util::{self, align_to, amount_alignment_needed};
 use ring::{rand, signature};
 use rsa_der;
 use sha2::{Digest, Sha256, Sha384, Sha512};
@@ -10,6 +8,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+use tbf_parser::util::{self, align_to, amount_alignment_needed};
 
 /// Helper function for reading RSA DER key files.
 fn read_rsa_file(path: &std::path::Path) -> Result<Vec<u8>, std::io::Error> {
@@ -357,7 +356,7 @@ pub fn elf_to_tbf(
 
     // Now we can create the first pass TBF header. This is mostly to get the
     // size of the header since we have to fill in some of the offsets later.
-    let mut tbfheader = header::TbfHeader::new();
+    let mut tbfheader = tbf_parser::types::TbfHeader::new();
 
     // Set the binary end offset here because it will cause a program header to
     // be inserted. This ensures the length calculations for the binary will be
@@ -670,26 +669,26 @@ pub fn elf_to_tbf(
 
     // Process optional footers
     if sha256 {
-        binary_index += mem::size_of::<header::TbfHeaderTlv>();
-        binary_index += mem::size_of::<header::TbfFooterCredentialsType>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>();
         binary_index += 32; // SHA256 is 32 bytes long
     }
 
     if sha384 {
-        binary_index += mem::size_of::<header::TbfHeaderTlv>();
-        binary_index += mem::size_of::<header::TbfFooterCredentialsType>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>();
         binary_index += 48; // SHA384 is 48 bytes long
     }
 
     if sha512 {
-        binary_index += mem::size_of::<header::TbfHeaderTlv>();
-        binary_index += mem::size_of::<header::TbfFooterCredentialsType>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>();
         binary_index += 64; // SHA512 is 64 bytes long
     }
 
     if rsa4096_private_key.is_some() {
-        binary_index += mem::size_of::<header::TbfHeaderTlv>();
-        binary_index += mem::size_of::<header::TbfFooterCredentialsType>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
+        binary_index += mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>();
         binary_index += 1024;
     }
 
@@ -703,8 +702,8 @@ pub fn elf_to_tbf(
         // bytes.
         needed_footer_reserved_space = cmp::max(
             needed_footer_reserved_space,
-            mem::size_of::<header::TbfHeaderTlv>()
-                + mem::size_of::<header::TbfFooterCredentialsType>(),
+            mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+                + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>(),
         );
         // We also must ensure that if there were to be a TLV after the
         // reserved TLV that it would start at a 4 byte alignment.
@@ -732,8 +731,8 @@ pub fn elf_to_tbf(
 
         // If there is room for a TbfFooterCredentials we will use that
         if pad
-            >= (mem::size_of::<header::TbfHeaderTlv>()
-                + mem::size_of::<header::TbfFooterCredentialsType>())
+            >= (mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+                + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>())
         {
             0
         } else {
@@ -769,21 +768,21 @@ pub fn elf_to_tbf(
     let mut footer_space_remaining = footers_len;
     if sha256 {
         // Total length
-        let sha256_len = mem::size_of::<header::TbfHeaderTlv>()
-            + mem::size_of::<header::TbfFooterCredentialsType>()
+        let sha256_len = mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+            + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>()
             + 32; // SHA256 is 32 bytes long
                   // Length in the TLV field
-        let sha256_tlv_len = sha256_len - mem::size_of::<header::TbfHeaderTlv>();
+        let sha256_tlv_len = sha256_len - mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
 
         let mut hasher = Sha256::new();
         hasher.update(&output[0..tbfheader.binary_end_offset() as usize]);
         let result = hasher.finalize();
-        let sha_credentials = header::TbfFooterCredentials {
-            base: header::TbfHeaderTlv {
-                tipe: header::TbfHeaderTypes::Credentials,
+        let sha_credentials = tbf_parser::types::TbfFooterCredentials {
+            base: tbf_parser::types::TbfHeaderTlv {
+                tipe: tbf_parser::types::TbfHeaderTypes::Credentials,
                 length: sha256_tlv_len as u16,
             },
-            format: header::TbfFooterCredentialsType::SHA256,
+            format: tbf_parser::types::TbfFooterCredentialsType::SHA256,
             data: result.to_vec(),
         };
         output.write_all(sha_credentials.generate().unwrap().get_ref())?;
@@ -795,21 +794,21 @@ pub fn elf_to_tbf(
 
     if sha384 {
         // Total length
-        let sha384_len = mem::size_of::<header::TbfHeaderTlv>()
-            + mem::size_of::<header::TbfFooterCredentialsType>()
+        let sha384_len = mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+            + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>()
             + 48; // SHA384 is 48 bytes long
                   // Length in the TLV field
-        let sha384_tlv_len = sha384_len - mem::size_of::<header::TbfHeaderTlv>();
+        let sha384_tlv_len = sha384_len - mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
 
         let mut hasher = Sha384::new();
         hasher.update(&output[0..tbfheader.binary_end_offset() as usize]);
         let result = hasher.finalize();
-        let sha_credentials = header::TbfFooterCredentials {
-            base: header::TbfHeaderTlv {
-                tipe: header::TbfHeaderTypes::Credentials,
+        let sha_credentials = tbf_parser::types::TbfFooterCredentials {
+            base: tbf_parser::types::TbfHeaderTlv {
+                tipe: tbf_parser::types::TbfHeaderTypes::Credentials,
                 length: sha384_tlv_len as u16,
             },
-            format: header::TbfFooterCredentialsType::SHA384,
+            format: tbf_parser::types::TbfFooterCredentialsType::SHA384,
             data: result.to_vec(),
         };
         output.write_all(sha_credentials.generate().unwrap().get_ref())?;
@@ -821,21 +820,21 @@ pub fn elf_to_tbf(
 
     if sha512 {
         // Total length
-        let sha512_len = mem::size_of::<header::TbfHeaderTlv>()
-            + mem::size_of::<header::TbfFooterCredentialsType>()
+        let sha512_len = mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+            + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>()
             + 64; // SHA512 is 64 bytes long
                   // Length in the TLV field
-        let sha512_tlv_len = sha512_len - mem::size_of::<header::TbfHeaderTlv>();
+        let sha512_tlv_len = sha512_len - mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
 
         let mut hasher = Sha512::new();
         hasher.update(&output[0..tbfheader.binary_end_offset() as usize]);
         let result = hasher.finalize();
-        let sha_credentials = header::TbfFooterCredentials {
-            base: header::TbfHeaderTlv {
-                tipe: header::TbfHeaderTypes::Credentials,
+        let sha_credentials = tbf_parser::types::TbfFooterCredentials {
+            base: tbf_parser::types::TbfHeaderTlv {
+                tipe: tbf_parser::types::TbfHeaderTypes::Credentials,
                 length: sha512_tlv_len as u16,
             },
-            format: header::TbfFooterCredentialsType::SHA512,
+            format: tbf_parser::types::TbfFooterCredentialsType::SHA512,
             data: result.to_vec(),
         };
         output.write_all(sha_credentials.generate().unwrap().get_ref())?;
@@ -851,11 +850,11 @@ pub fn elf_to_tbf(
     if rsa4096_private_key.is_none() && rsa4096_public_key.is_some() {
         panic!("RSA4096 public key provided but no corresponding private key provided.");
     } else if rsa4096_private_key.is_some() && rsa4096_private_key.is_some() {
-        let rsa4096_len = mem::size_of::<header::TbfHeaderTlv>()
-            + mem::size_of::<header::TbfFooterCredentialsType>()
+        let rsa4096_len = mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+            + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>()
             + 1024; // Signature + key is 1024 bytes long
                     // Length in the TLV field
-        let rsa4096_tlv_len = rsa4096_len - mem::size_of::<header::TbfHeaderTlv>();
+        let rsa4096_tlv_len = rsa4096_len - mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
 
         let private_buf = rsa4096_private_key.unwrap();
         let private_key_path = Path::new(&private_buf);
@@ -924,12 +923,12 @@ pub fn elf_to_tbf(
             credentials[index] = signature[i];
         }
 
-        let rsa4096_credentials = header::TbfFooterCredentials {
-            base: header::TbfHeaderTlv {
-                tipe: header::TbfHeaderTypes::Credentials,
+        let rsa4096_credentials = tbf_parser::types::TbfFooterCredentials {
+            base: tbf_parser::types::TbfHeaderTlv {
+                tipe: tbf_parser::types::TbfHeaderTypes::Credentials,
                 length: rsa4096_tlv_len as u16,
             },
-            format: header::TbfFooterCredentialsType::Rsa4096Key,
+            format: tbf_parser::types::TbfFooterCredentialsType::Rsa4096Key,
             data: credentials,
         };
 
@@ -944,19 +943,20 @@ pub fn elf_to_tbf(
 
     // Need at least space for the base Credentials TLV.
     if padding_len
-        >= (mem::size_of::<header::TbfHeaderTlv>()
-            + mem::size_of::<header::TbfFooterCredentialsType>())
+        >= (mem::size_of::<tbf_parser::types::TbfHeaderTlv>()
+            + mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>())
     {
-        let padding_tlv_len = padding_len - mem::size_of::<header::TbfHeaderTlv>();
-        let reserved_len = padding_tlv_len - mem::size_of::<header::TbfFooterCredentialsType>();
+        let padding_tlv_len = padding_len - mem::size_of::<tbf_parser::types::TbfHeaderTlv>();
+        let reserved_len =
+            padding_tlv_len - mem::size_of::<tbf_parser::types::TbfFooterCredentialsType>();
         let mut reserved_vec = Vec::<u8>::with_capacity(reserved_len);
         reserved_vec.resize(reserved_len, 0);
-        let padding_credentials = header::TbfFooterCredentials {
-            base: header::TbfHeaderTlv {
-                tipe: header::TbfHeaderTypes::Credentials,
+        let padding_credentials = tbf_parser::types::TbfFooterCredentials {
+            base: tbf_parser::types::TbfHeaderTlv {
+                tipe: tbf_parser::types::TbfHeaderTypes::Credentials,
                 length: padding_tlv_len as u16,
             },
-            format: header::TbfFooterCredentialsType::Reserved,
+            format: tbf_parser::types::TbfFooterCredentialsType::Reserved,
             data: reserved_vec,
         };
         let creds = padding_credentials.generate().unwrap();
